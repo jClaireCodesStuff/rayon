@@ -1,0 +1,46 @@
+Upgrading the futures crate from 0.1 to 0.3 broke:
+
+Missing:
+
+futures::task::Task
+
+futures::Async
+
+futures::executor::{self, Notify, NotifyHandle, UnsafeNotify}
+
+futures::executor::spawn
+
+futures::task::executor
+
+futures::task::current
+
+Changed:
+the Future trait has only a single return type, not Item/Error
+
+No Future::wait
+
+futures::task::Spawn doesn't have a type argument
+
+----
+
+futures::task::Spawn used to represent a "fused future and task".  Now it is:
+
+ > The Spawn trait allows for pushing futures onto an executor that will run them to completion.
+
+so it certainly no longer does the same thing
+
+----
+
+futures::Async
+
+Return type of future, indicating whether a value is ready or not.
+
+This is now
+
+futures::Poll 
+
+----
+
+futures::executor::{Notify*}
+
+These have become `Waker` and `ArcWake` and so on, see futures::task

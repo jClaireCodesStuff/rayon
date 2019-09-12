@@ -13,4 +13,4 @@ categories = ["concurrency"]
 
 [dependencies]
 rayon-core = { version = "1.3", path = "../rayon-core" }
-futures = "0.1.16"
+futures-preview = "0.3.0-alpha.18"
