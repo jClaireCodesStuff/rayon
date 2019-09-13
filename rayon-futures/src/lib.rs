@@ -32,7 +32,7 @@ const STATE_EXECUTING_UNPARKED: usize = 3;
 const STATE_COMPLETE: usize = 4;
 
 pub trait ScopeFutureExt<'scope> {
-    fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Item, F::Error>
+    fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
         F: Future + Send + 'scope;
 }
@@ -41,7 +41,7 @@ impl<'scope, T> ScopeFutureExt<'scope> for T
 where
     T: ToScopeHandle<'scope>,
 {
-    fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Item, F::Error>
+    fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
         F: Future + Send + 'scope,
     {
@@ -74,11 +74,11 @@ where
 ///
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
-pub struct RayonFuture<T, E> {
-    inner: Arc<ScopeFutureTrait<Result<T, E>, Box<Any + Send + 'static>>>,
+pub struct RayonFuture<T> {
+    inner: Arc<ScopeFutureTrait<T, Box<Any + Send + 'static>>>,
 }
 
-impl<T, E> RayonFuture<T, E> {
+/* impl<T> RayonFuture<T> {
     pub fn rayon_wait(mut self) -> Result<T, E> {
         worker::if_in_worker_thread(|worker_thread| {
             // In Rayon worker thread: spin. Unsafe because we must be
@@ -97,20 +97,19 @@ impl<T, E> RayonFuture<T, E> {
         })
         .unwrap_or_else(|| self.wait())
     }
-}
+} */
 
-impl<T, E> Future for RayonFuture<T, E> {
-    type Item = T;
-    type Error = E;
+impl<T> Future for RayonFuture<T> {
+    type Output = T;
 
-    fn wait(self) -> Result<T, E> {
+    /* fn wait(self) -> Result<T, E> {
         worker::if_in_worker_thread(|_| {
             panic!("using  `wait()` in a Rayon thread is unwise; try `rayon_wait()`")
         });
         executor::spawn(self).wait_future()
-    }
+    } */
 
-    fn poll(&mut self) -> Poll<T, E> {
+    fn poll(&mut self) -> Poll<T> {
         match self.inner.poll() {
             Ok(Async::Ready(Ok(v))) => Ok(Async::Ready(v)),
             Ok(Async::Ready(Err(e))) => Err(e),
@@ -120,13 +119,13 @@ impl<T, E> Future for RayonFuture<T, E> {
     }
 }
 
-impl<T, E> Drop for RayonFuture<T, E> {
+impl<T> Drop for RayonFuture<T> {
     fn drop(&mut self) {
         self.inner.cancel();
     }
 }
 
-impl<T, E> fmt::Debug for RayonFuture<T, E> {
+impl<T> fmt::Debug for RayonFuture<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("RayonFuture").finish()
     }
