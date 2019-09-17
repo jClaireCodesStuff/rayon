@@ -9,3 +9,5 @@ also used to propagate panics, but what happens if this outer future is
 dropped?  If the inner future panics but doesn't panic before the outer future
 is dropped, should the panic be propagated to ::rayon::scope, and if so how
 does this interact with the invariants of trait `ScopeHandle`?
+
+TODO: It may be possible to auto-impl Send + Sync for ScopeFuture
