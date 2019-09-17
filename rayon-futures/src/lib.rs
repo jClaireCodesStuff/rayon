@@ -108,36 +108,8 @@ pub struct RayonFuture<T> {
     scope_future: Arc<ScopeFutureEscapeSafe<Result<T, Box<dyn Any + Send + 'static>>>>,
 }
 
-/* impl<T> RayonFuture<T> {
-    pub fn rayon_wait(mut self) -> Result<T, E> {
-        worker::if_in_worker_thread(|worker_thread| {
-            // In Rayon worker thread: spin. Unsafe because we must be
-            // sure that `self.inner.probe()` will trigger some Rayon
-            // event once it becomes true -- and it will, as when the
-            // future moves to the complete state, we will invoke
-            // either `ScopeHandle::panicked()` or `ScopeHandle::ok()`
-            // on our scope handle.
-            unsafe {
-                worker_thread.wait_until_true(|| self.inner.probe());
-            }
-            self.poll().map(|a_v| match a_v {
-                Async::Ready(v) => v,
-                Async::NotReady => panic!("probe() returned true but poll not ready"),
-            })
-        })
-        .unwrap_or_else(|| self.wait())
-    }
-} */
-
 impl<T> Future for RayonFuture<T> {
     type Output = T;
-
-    /* fn wait(self) -> Result<T, E> {
-        worker::if_in_worker_thread(|_| {
-            panic!("using  `wait()` in a Rayon thread is unwise; try `rayon_wait()`")
-        });
-        executor::spawn(self).wait_future()
-    } */
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
         use Poll::*;
