@@ -119,24 +119,34 @@ impl<T> Future for RayonFuture<T> {
     } */
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
-        unimplemented!();
         use Poll::*;
+        if !self.probe() {
+            self.scope_future.set_waker_by_ref(cx.waker());
+        }
+        // Setting the `waker` doesn't race against other invocations of `poll`
+        // because `&mut Self` is required.  It races against polling the inner
+        // future, but this race is serialized by the contents mutex.  
+        // 
+        // Case A: 
+        //    `waker` is set before the inner future completes.  It can then be
+        //    woken before `get_poll` takes the mutex.  A spurious wakeup can
+        //    occur, but spurious wakeups are allowed.
+        //
+        // Case B:
+        //    `waker` is set after the inner future completes.  It misses the
+        //    wakeup, but `get_poll` happens after `waker` is set happens after
+        //    the result is recorded in contents.  The result is visible and
+        //    no deadlock occurs.
+        //
+        // Case C:
+        //    `probe` observes and synchronizes with `STATE_COMPLETE`.
+        //    `get_poll` happens after the inner future locks the contents,
+        //    then reasoning is the same as Case B.
         match self.scope_future.get_poll() {
-            Pending => {
-                self.scope_future.set_waker_by_ref(cx.waker());
-                Pending
-            },
-            Ready(Ok(x)) => Ready(x),
+            Pending => Pending, 
+            Ready(Ok(x)) => Ready(x), 
             Ready(Err(p)) => panic::resume_unwind(p)
         }
-        /*
-        match self.inner.poll() {
-            Ok(Async::Ready(Ok(v))) => Ok(Async::Ready(v)),
-            Ok(Async::Ready(Err(e))) => Err(e),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(e) => panic::resume_unwind(e),
-        }
-        */
     }
 }
 
@@ -182,8 +192,9 @@ where
     // assured that this pointer remains valid
     scope: Option<S>,
 
-    /* waiting_task: Option<Task>, */
-    waiting_task: (), // TODO: needs equivalent
+    // waker to wake the outer task when the inner future completes.
+    waker: Option<Waker>,
+    
     result: Poll<CUOutput<F>>,
 
     canceled: bool,
@@ -648,22 +659,19 @@ where
     fn get_poll(&self) -> Poll<CUOutput<F>> {
         // UNSAFE: the Future `F` must not be polled or otherwise borrowed here
         // because this method may be called from outside `'scope`.
-        unimplemented!();
-        /*
-        // Important: due to transmute hackery, not all the fields are
-        // truly known to be valid at this point. In particular, the
-        // type F is erased. But the `state` and `result` fields
-        // should be valid.
         let mut contents = self.contents.lock().unwrap();
-        let state = self.state.load(Relaxed);
-        if state == STATE_COMPLETE {
-            let r = mem::replace(&mut contents.result, Ok(Async::NotReady));
-            return r;
-        } else {
-            contents.waiting_task = Some(task::current());
-            Ok(Async::NotReady)
-        }
-        */
+        let poll_result = mem::replace(&mut contents.result, Poll::Pending);
+        
+        // Detect being called after the end.  Acquiring the contents mutex
+        // ensures that STATE_COMPLETE will be observable because it is stored
+        // with that mutex held.  However, returning `PollPending` is the behavior
+        // of `futures::future::Fuse`, so this doesn't seem necessary.
+        //
+        // if poll_result == Poll::Pending && self.state.load(Relaxed) == STATE_COMPLETE {
+        //    panic!("`RayonFuture` was polled after finishing.");
+        // }
+
+        poll_result
     }
 
     fn cancel(&self) {
@@ -691,7 +699,15 @@ where
     }
 
     fn set_waker_by_ref(&self, w: &Waker) {
-        unimplemented!();
+        let mut contents = self.contents.lock().unwrap();
+        // Don't clone if `Waker::will_wake`
+        let old = contents.waker.as_ref();
+        if old.map(|old| old.will_wake(w)) == Some(true) {
+            return;
+        }
+        // else replace
+        let new = w.clone();
+        contents.waker = Some(new);
     }
 }
 
