@@ -1,11 +1,11 @@
 #![cfg(test)]
 
 use super::ScopeFutureExt;
-use futures::executor::Notify;
+//use futures::executor::Notify;
 use futures::future::lazy;
-use futures::sync::oneshot;
+//use futures::sync::oneshot;
 use futures::task;
-use futures::{self, Async, Future};
+use futures::{self, Poll, Future};
 use rayon_core::{scope, ThreadPool, ThreadPoolBuilder};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 /// Basic test of using futures to data on the stack frame.
 #[test]
 fn future_test() {
+    unimplemented!();
+    /*
     let data = &[0, 1];
 
     // Here we call `wait` on a select future, which will block at
@@ -32,6 +34,7 @@ fn future_test() {
                 assert!(*item2 == 1 - *item1);
             });
         });
+    */
 }
 
 /// Test using `map` on a Rayon future. The `map` closure is eecuted
@@ -39,6 +42,8 @@ fn future_test() {
 /// by enclosing stack frame.
 #[test]
 fn future_map() {
+    unimplemented!();
+    /*
     let data = &mut [format!("Hello, ")];
 
     let mut future = None;
@@ -53,12 +58,15 @@ fn future_map() {
     // though we never invoked `wait` to observe its result
     assert_eq!(data[0], "Hello, world!");
     assert!(future.is_some());
+    */
 }
 
 /// Test that we can create a future that returns an `&mut` to data,
 /// so long as it outlives the scope.
 #[test]
 fn future_escape_ref() {
+    unimplemented!();
+    /*
     let data = &mut [format!("Hello, ")];
 
     {
@@ -72,11 +80,14 @@ fn future_escape_ref() {
     }
 
     assert_eq!(data[0], "Hello, world!");
+    */
 }
 
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn future_panic_prop() {
+    unimplemented!();
+    /*
     scope(|s| {
         let future = s.spawn_future(lazy(move || Ok::<(), ()>(argh())));
         let _ = future.rayon_wait(); // should panic, not return a value
@@ -87,12 +98,15 @@ fn future_panic_prop() {
             panic!("Hello, world!");
         }
     }
+    */
 }
 
 /// Test that, even if we have only one thread, invoke `rayon_wait`
 /// will not panic.
 #[test]
 fn future_rayon_wait_1_thread() {
+    unimplemented!();
+    /*
     // run with only 1 worker thread; this would deadlock if we couldn't make progress
     let mut result = None;
     ThreadPoolBuilder::new()
@@ -112,6 +126,7 @@ fn future_rayon_wait_1_thread() {
             });
         });
     assert_eq!(result, Some(22));
+    */
 }
 
 /// Test that invoking `wait` on a `RayonFuture` will panic, if it is inside
@@ -119,21 +134,27 @@ fn future_rayon_wait_1_thread() {
 #[test]
 #[should_panic]
 fn future_wait_panics_inside_rayon_thread() {
+    unimplemented!();
+    /*
     scope(|s| {
         let future = s.spawn_future(lazy(move || Ok::<(), ()>(())));
         let _ = future.wait(); // should panic, not return a value
     });
+    */
 }
 
 /// Test that invoking `wait` on a `RayonFuture` will not panic if we
 /// are outside a Rayon worker thread.
 #[test]
 fn future_wait_works_outside_rayon_threads() {
+    unimplemented!();
+    /*
     let mut future = None;
     scope(|s| {
         future = Some(s.spawn_future(lazy(move || Ok::<(), ()>(()))));
     });
     assert_eq!(Ok(()), future.unwrap().wait());
+    */
 }
 
 /// Test that invoking `wait` on a `RayonFuture` will not panic if we
@@ -141,6 +162,8 @@ fn future_wait_works_outside_rayon_threads() {
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn panicy_unpark() {
+    unimplemented!();
+    /*
     scope(|s| {
         let (a_tx, a_rx) = oneshot::channel::<u32>();
         let rf = s.spawn_future(a_rx);
@@ -179,10 +202,13 @@ fn panicy_unpark() {
     }
 
     const PANIC_UNPARK: &'static PanicUnpark = &PanicUnpark;
+    */
 }
 
 #[test]
 fn double_unpark() {
+    unimplemented!();
+    /*
     let unpark0 = Arc::new(TrackUnpark {
         value: AtomicUsize::new(0),
     });
@@ -235,10 +261,13 @@ fn double_unpark() {
             self.value.fetch_add(1, Ordering::SeqCst);
         }
     }
+    */
 }
 
 #[test]
 fn async_future_map() {
+    unimplemented!();
+    /*
     let data = Arc::new(Mutex::new(format!("Hello, ")));
 
     let pool = ThreadPool::global();
@@ -255,11 +284,14 @@ fn async_future_map() {
     // future must have executed for the scope to have ended, even
     // though we never invoked `wait` to observe its result
     assert_eq!(&data.lock().unwrap()[..], "Hello, world!");
+    */
 }
 
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn async_future_panic_prop() {
+    unimplemented!();
+    /*
     let pool = ThreadPool::global();
     let future = pool.spawn_future(lazy(move || Ok::<(), ()>(argh())));
     let _ = future.rayon_wait(); // should panic, not return a value
@@ -269,10 +301,13 @@ fn async_future_panic_prop() {
             panic!("Hello, world!");
         }
     }
+    */
 }
 
 #[test]
 fn async_future_scope_interact() {
+    unimplemented!();
+    /*
     let pool = ThreadPool::global();
     let future = pool.spawn_future(lazy(move || Ok::<usize, ()>(22)));
 
@@ -285,4 +320,5 @@ fn async_future_scope_interact() {
     });
 
     assert_eq!(vec![44], vec);
+    */
 }
