@@ -583,7 +583,43 @@ where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
+
     fn execute(this: Arc<Self>) {
+        use Poll::*;
+        // Futures-0.3 requires creating a `Context` before polling async code.
+        let waker = futures::task::waker(this.clone());
+        let mut cx = Context::from_waker(&waker);
+
+        let mut parked = true;
+        loop {
+            // Taking the contents mutex serializes with other operations that
+            // access it such as cancellation or the outer future being polled.
+            let mut contents = this.contents.lock().unwrap();
+            if parked {
+                this.begin_execute_state();
+                parked = false;
+            }
+
+            // Then check for cancellation.
+            if contents.canceled {
+                contents.complete(Pending);
+                return
+            }
+
+            match contents.poll_inner(&mut cx) {
+                Pending => {
+                    if this.end_execute_state() {
+                        return;
+                    }
+                },
+                polled_complete => {
+                    contents.complete(polled_complete);
+                    return;
+                }
+            }
+        }
+    }
+    /* fn execute(this: Arc<Self>) {
         unimplemented!();
         /*
         // *generally speaking* there should be no contention for the
@@ -612,7 +648,7 @@ where
             }
         }
         */
-    }
+    }*/
 }
 
 impl<'scope, F, S> ScopeFutureContents<'scope, F, S>
@@ -620,7 +656,7 @@ where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-    fn poll(&mut self) -> Poll<CUOutput<F>> {
+    fn poll_inner(&mut self, cx: &mut Context) -> Poll<CUOutput<F>> {
         unimplemented!();
         /*
         let notify = self.this.as_ref().unwrap();
