@@ -126,15 +126,15 @@ impl<T> Future for RayonFuture<T> {
         //    occur, but spurious wakeups are allowed.
         //
         // Case B:
-        //    `waker` is set after the inner future completes.  It misses the
-        //    wakeup, but `get_poll` happens after `waker` is set happens after
-        //    the result has been recorded in contents.  The result is visible
-        //    and no deadlock occurs.
+        //    `waker` is set after the inner future completes.  A wakeup is
+        //    missed.  Result is recorded (happens-before) waker is set
+        //    (happens-before) `get_poll` below. The result is visible and no
+        //    deadlock occurs.
         //
         // Case C:
         //    `probe` observes and synchronizes with `STATE_COMPLETE`.
-        //    `get_poll` happens after the inner future locks the contents,
-        //    then reasoning is the same as Case B.
+        //    `complete` locks mutex (happens-before) setting `STATE_COMPLETE`
+        //    (happens-before) `probe` (happens-before) `get_poll`
         match self.scope_future.get_poll() {
             Pending => Pending,
             Ready(Ok(x)) => Ready(x),
