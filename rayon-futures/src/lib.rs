@@ -386,6 +386,7 @@ where
 }
 */
 
+// TODO: auto-impl Send + Sync for ScopeFuture
 // Assert that the `*const` is safe to transmit between threads:
 unsafe impl<'scope, F, S> Send for ScopeFuture<'scope, F, S>
 where
