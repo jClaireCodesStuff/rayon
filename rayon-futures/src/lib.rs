@@ -604,8 +604,6 @@ where
     }
 
     fn cancel(&self) {
-        unimplemented!();
-        /*
         // Fast-path: check if this is already complete and return if
         // so. A relaxed load suffices since we are not going to
         // access any data as a result of this action.
@@ -614,17 +612,24 @@ where
         }
 
         // Slow-path. Get the lock and set the canceled flag to
-        // true. Also grab the `this` instance (which may be `None`,
-        // if the future completes before we get the lack).
+        // true.
+
         let mut contents = self.contents.lock().unwrap();
         contents.canceled = true;
 
+        // Unpark if `contents.this` is still available.
+
+        if let Some(ref u) = contents.this {
+            u.unpark_inherent();
+        }
+
+        /*
         // If the `this` we grabbed was not `None`, then notify it.
         // This will schedule the future.
         if let Some(ref u) = contents.this {
-            u.notify(0);
-        }
-        */
+            
+        }*/
+        
     }
 
     fn set_waker_by_ref(&self, w: &Waker) {
