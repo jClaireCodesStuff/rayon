@@ -1,0 +1,68 @@
+type notes
+
+pub struct RayonFuture<T, E>
+    T -- return ok
+    E -- return err
+
+struct ScopeFuture<'scope, F, S>
+    
+
+struct ScopeFutureContents<'scope, F, S> 
+    F: Future + Send + 'scope
+    S: ScopeHandle<'scope>
+
+
+struct ArcScopeFuture<'scope, F, S>
+    newtype Arc<ScopeFuture>
+
+
+struct ScopeFutureWrapped<'scope, F: 'Scope, S>
+    newtype PhantomData<(&'scope F, S)>
+    // This is a really interesting beastie
+    // casts *const &self ->
+    //       *const ArcScopeFuture
+    //
+    // in order to call `Notify`
+
+    // I suspect such shenanigans are no longer necessary
+    // with the new Waker but it almost seems a shame to let
+    // it go.
+
+trait ScopeFutureTrait<T, E> {
+    fn probe(&self) -> bool;
+    // returns true when future is COMPLETE
+
+    fn poll(&self) -> Poll<T>
+    // pass through to the wrapped future
+
+    fn cancel(&self)
+    // no longer care about the result of the future
+
+----
+
+Entry point is 
+
+trait ScopeFutureExt<'scope>
+    fn spawn_future<F>
+        (&self, future: F) 
+        -> RayonFuture<F::Item, F::Error>
+    where
+        F: Future + Send + 'scope
+
+
+Obviously the return type changes.
+
+struct RayonFuture
+    fn rayon_wait(self) -> Result<T, E>
+
+possibly delete that; futures are no longer expected to provide a wait method
+
+    impl Drop
+    impl Debug
+    impl Future
+
+    auto impl Send
+    auto impl Unpin
+    auto impl Sync
+
+The only required method is `Future::poll`
