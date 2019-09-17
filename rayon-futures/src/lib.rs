@@ -120,7 +120,7 @@ impl<T> Future for RayonFuture<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
         use Poll::*;
-        if !self.probe() {
+        if !self.scope_future.probe() {
             self.scope_future.set_waker_by_ref(cx.waker());
         }
         // Setting the `waker` doesn't race against other invocations of `poll`
