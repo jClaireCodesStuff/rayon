@@ -4,22 +4,26 @@
 #![deny(missing_debug_implementations)]
 #![doc(html_root_url = "https://docs.rs/rayon-futures/0.1")]
 
+// TODO: bare trait object
+#![allow(bare_trait_objects)]
+
 extern crate futures;
 extern crate rayon_core;
 
 use futures::future::CatchUnwind;
-use futures::task::{self, Spawn, Task};
-use futures::{Async, Future, Poll};
-use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
+use futures::task::Context;
+use futures::{Future, Poll};
+//use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
 
-use futures::executor::{self, Notify, NotifyHandle, UnsafeNotify};
+//use futures::executor;
 use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
-use std::any::Any;
+//use std::any::Any;
+use std::pin::Pin;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
-use std::ptr;
+//use std::ptr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
@@ -45,6 +49,8 @@ where
     where
         F: Future + Send + 'scope,
     {
+        unimplemented!();
+        /* 
         let inner = ScopeFuture::spawn(future, self.to_scope_handle());
 
         // We assert that it is safe to hide the type `F` (and, in
@@ -59,11 +65,12 @@ where
             };
         }
 
-        unsafe fn hide_lifetime<'l, T, E>(
-            x: Arc<ScopeFutureTrait<T, E> + 'l>,
-        ) -> Arc<ScopeFutureTrait<T, E>> {
+        unsafe fn hide_lifetime<'l, T>(
+            x: Arc<ScopeFutureTrait<T> + 'l>,
+        ) -> Arc<ScopeFutureTrait<T>> {
             mem::transmute(x)
         }
+        */
     }
 }
 
@@ -75,7 +82,7 @@ where
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
 pub struct RayonFuture<T> {
-    inner: Arc<ScopeFutureTrait<T, Box<Any + Send + 'static>>>,
+    inner: Arc<ScopeFutureTrait<T>>,
 }
 
 /* impl<T> RayonFuture<T> {
@@ -109,13 +116,16 @@ impl<T> Future for RayonFuture<T> {
         executor::spawn(self).wait_future()
     } */
 
-    fn poll(&mut self) -> Poll<T> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
+        unimplemented!(); 
+        /*
         match self.inner.poll() {
             Ok(Async::Ready(Ok(v))) => Ok(Async::Ready(v)),
             Ok(Async::Ready(Err(e))) => Err(e),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(e) => panic::resume_unwind(e),
         }
+        */
     }
 }
 
@@ -142,27 +152,23 @@ where
 }
 
 type CU<F> = CatchUnwind<AssertUnwindSafe<F>>;
-type CUItem<F> = <CU<F> as Future>::Item;
-type CUError<F> = <CU<F> as Future>::Error;
+type CUOutput<F> = <CU<F> as Future>::Output;
 
 struct ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-    spawn: Option<Spawn<CU<F>>>,
+    /* spawn: Option<Spawn<CU<F>>>, */
+    spawn: (), // TODO: equivalent
 
     // Pointer to ourselves. We `None` this out when we are finished
     // executing, but it's convenient to keep around normally.
     this: Option<ArcScopeFuture<'scope, F, S>>,
 
-    // the counter in the scope; since the scope doesn't terminate until
-    // counter reaches zero, and we hold a ref in this counter, we are
-    // assured that this pointer remains valid
-    scope: Option<S>,
-
-    waiting_task: Option<Task>,
-    result: Poll<CUItem<F>, CUError<F>>,
+    /* waiting_task: Option<Task>, */
+    waiting_task: (), // TODO: needs equivalent
+    result: Poll<CUOutput<F>>,
 
     canceled: bool,
 }
@@ -194,6 +200,7 @@ where
     }
 }
 
+/* TODO: equivalent to Notify
 impl<'scope, F, S> Notify for ArcScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
@@ -211,6 +218,7 @@ where
         self.0.drop_id(id)
     }
 }
+*/
 
 // This is adapted from the implementation of Into<UnsafeNotify> for
 // Arc in futures-rs, we need to roll our own to drop the 'static bound.
@@ -221,6 +229,7 @@ struct ScopeFutureWrapped<'scope, F: 'scope, S>(PhantomData<(&'scope F, S)>);
 unsafe impl<'scope, F, S> Send for ScopeFutureWrapped<'scope, F, S> {}
 unsafe impl<'scope, F, S> Sync for ScopeFutureWrapped<'scope, F, S> {}
 
+/* TODO: equivalent to Notify
 impl<'scope, F, S> Notify for ScopeFutureWrapped<'scope, F, S>
 where
     F: Future + Send + 'scope,
@@ -259,18 +268,23 @@ where
         }
     }
 }
+*/
 
+/* TODO: equivalent UnsafeNotify
 unsafe impl<'scope, F, S> UnsafeNotify for ScopeFutureWrapped<'scope, F, S>
 where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
     unsafe fn clone_raw(&self) -> NotifyHandle {
+        unimplemented!();
+        /*
         let me: *const ScopeFutureWrapped<'scope, F, S> = self;
         let arc = (*(&me as *const *const ScopeFutureWrapped<'scope, F, S>
             as *const ArcScopeFuture<'scope, F, S>))
             .clone();
         NotifyHandle::from(arc)
+        */
     }
 
     unsafe fn drop_raw(&self) {
@@ -280,13 +294,17 @@ where
         ptr::drop_in_place(me);
     }
 }
+*/
 
+/* TODO: possibly not needed
 impl<'scope, F, S> From<ArcScopeFuture<'scope, F, S>> for NotifyHandle
 where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
     fn from(rc: ArcScopeFuture<'scope, F, S>) -> NotifyHandle {
+        unimplemented!();
+        /*
         unsafe {
             let ptr = mem::transmute::<
                 ArcScopeFuture<'scope, F, S>,
@@ -304,8 +322,10 @@ where
             // `counter`.
             NotifyHandle::new(mem::transmute(ptr as *mut UnsafeNotify))
         }
+        */
     }
 }
+*/
 
 // Assert that the `*const` is safe to transmit between threads:
 unsafe impl<'scope, F, S> Send for ScopeFuture<'scope, F, S>
@@ -327,6 +347,8 @@ where
     S: ScopeHandle<'scope>,
 {
     fn spawn(future: F, scope: S) -> Arc<Self> {
+        unimplemented!();
+        /*
         // Using `AssertUnwindSafe` is valid here because (a) the data
         // is `Send + Sync`, which is our usual boundary and (b)
         // panics will be propagated when the `RayonFuture` is polled.
@@ -356,9 +378,12 @@ where
         future.notify(0);
 
         future
+        */
     }
 
     fn unpark_inherent(&self) {
+        unimplemented!();
+        /*
         loop {
             match self.state.load(Relaxed) {
                 STATE_PARKED => {
@@ -413,6 +438,7 @@ where
                 }
             }
         }
+        */
     }
 
     fn begin_execute_state(&self) {
@@ -462,6 +488,7 @@ where
     }
 }
 
+/* TODO: equivalent Notify
 impl<'scope, F, S> Notify for ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
@@ -471,6 +498,7 @@ where
         self.unpark_inherent();
     }
 }
+*/
 
 impl<'scope, F, S> RayonTask for ScopeFuture<'scope, F, S>
 where
@@ -478,6 +506,8 @@ where
     S: ScopeHandle<'scope>,
 {
     fn execute(this: Arc<Self>) {
+        unimplemented!();
+        /*
         // *generally speaking* there should be no contention for the
         // lock, but it is possible -- we can end execution, get re-enqeueud,
         // and re-executed, before we have time to return from this fn
@@ -503,6 +533,7 @@ where
                 }
             }
         }
+        */
     }
 }
 
@@ -511,12 +542,17 @@ where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-    fn poll(&mut self) -> Poll<CUItem<F>, CUError<F>> {
+    fn poll(&mut self) -> Poll<CUOutput<F>> {
+        unimplemented!();
+        /*
         let notify = self.this.as_ref().unwrap();
         self.spawn.as_mut().unwrap().poll_future_notify(notify, 0)
+        */
     }
 
-    fn complete(&mut self, value: Poll<CUItem<F>, CUError<F>>) {
+    fn complete(&mut self, value: Poll<CUOutput<F>>) {
+        unimplemented!();
+        /*
         // So, this is subtle. We know that the type `F` may have some
         // data which is only valid until the end of the scope, and we
         // also know that the scope doesn't end until `self.counter`
@@ -559,23 +595,24 @@ where
         } else {
             scope.ok();
         }
+        */
     }
 }
 
-trait ScopeFutureTrait<T, E>: Send + Sync {
+trait ScopeFutureTrait<T>: Send + Sync {
     /// Returns true when future is in the COMPLETE state.
     fn probe(&self) -> bool;
 
     /// Execute the `poll` operation of a future: read the result if
     /// it is ready, return `Async::NotReady` otherwise.
-    fn poll(&self) -> Poll<T, E>;
+    fn poll(&self) -> Poll<T>;
 
     /// Indicate that we no longer care about the result of the future.
     /// Corresponds to `Drop` in the future trait.
     fn cancel(&self);
 }
 
-impl<'scope, F, S> ScopeFutureTrait<CUItem<F>, CUError<F>> for ScopeFuture<'scope, F, S>
+impl<'scope, F, S> ScopeFutureTrait<CUOutput<F>> for ScopeFuture<'scope, F, S>
 where
     F: Future + Send,
     S: ScopeHandle<'scope>,
@@ -584,7 +621,9 @@ where
         self.state.load(Acquire) == STATE_COMPLETE
     }
 
-    fn poll(&self) -> Poll<CUItem<F>, CUError<F>> {
+    fn poll(&self) -> Poll<CUOutput<F>> {
+        unimplemented!();
+        /*
         // Important: due to transmute hackery, not all the fields are
         // truly known to be valid at this point. In particular, the
         // type F is erased. But the `state` and `result` fields
@@ -598,9 +637,12 @@ where
             contents.waiting_task = Some(task::current());
             Ok(Async::NotReady)
         }
+        */
     }
 
     fn cancel(&self) {
+        unimplemented!();
+        /*
         // Fast-path: check if this is already complete and return if
         // so. A relaxed load suffices since we are not going to
         // access any data as a result of this action.
@@ -619,6 +661,7 @@ where
         if let Some(ref u) = contents.this {
             u.notify(0);
         }
+        */
     }
 }
 
