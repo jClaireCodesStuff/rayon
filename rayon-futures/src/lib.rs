@@ -555,6 +555,17 @@ where
     }
 }
 
+impl<'scope, F, S> ArcWake for ScopeFuture<'scope, F, S>
+where
+    F: Future + Send + 'scope,
+    S: ScopeHandle<'scope>,
+{
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        let this = &*arc_self;
+        this.unpark_inherent()
+    }
+}
+
 /* TODO: equivalent Notify
 impl<'scope, F, S> Notify for ScopeFuture<'scope, F, S>
 where
