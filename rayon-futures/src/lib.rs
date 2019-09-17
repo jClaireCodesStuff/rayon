@@ -212,11 +212,12 @@ where
     S: ScopeHandle<'scope>,
 {
     /* spawn: Option<Spawn<CU<F>>>, */
-    spawn: (), // TODO: equivalent
+    //spawn: (), // TODO: equivalent
+    inner_future: Option<CU<F>>,
 
     // Pointer to ourselves. We `None` this out when we are finished
     // executing, but it's convenient to keep around normally.
-    this: Option<ArcScopeFuture<'scope, F, S>>,
+    this: Option<Arc<ScopeFuture<'scope, F, S>>>,
 
     // the counter in the scope; since the scope doesn't terminate until
     // counter reaches zero, and we hold a ref in this counter, we are
@@ -469,7 +470,7 @@ where
                                 .scope
                                 .as_ref()
                                 .expect("scope already dropped")
-                                .spawn_task(task_ref.0);
+                                .spawn_task(task_ref);
                         }
                         return;
                     }
@@ -657,7 +658,13 @@ where
     S: ScopeHandle<'scope>,
 {
     fn poll_inner(&mut self, cx: &mut Context) -> Poll<CUOutput<F>> {
-        unimplemented!();
+        // UNSAFE: `ScopeFutureContents` is Arc-boxed, which
+        // satisfies `Pin` even if the inner future is `!Unpin`.
+        let inner_future = unsafe {
+            Pin::new_unchecked(self.inner_future.as_mut().expect("inner future already dropped"))
+        };
+        inner_future.poll(cx)
+        //unimplemented!();
         /*
         let notify = self.this.as_ref().unwrap();
         self.spawn.as_mut().unwrap().poll_future_notify(notify, 0)
@@ -665,7 +672,40 @@ where
     }
 
     fn complete(&mut self, value: Poll<CUOutput<F>>) {
-        unimplemented!();
+        // UNSAFE: Consuming `self.scope` allows the lifetime `'scope` to end,
+        // and would allow `inner_future` to dangle, so it is dropped first.
+        drop(self.inner_future.take().unwrap());
+        self.result = value;
+        let this = self.this.take().unwrap();
+
+        if cfg!(debug_assertions) {
+            let state = this.state.load(Relaxed);
+            debug_assert!(
+                state == STATE_EXECUTING || state == STATE_EXECUTING_UNPARKED,
+                "cannot complete when not executing (state = {})",
+                state
+            );
+        }
+        this.state.store(STATE_COMPLETE, Release);
+
+        // PANIC: The outer waker is arbitrary user code
+        use panic::AssertUnwindSafe as AUS;
+        use panic::catch_unwind;
+        let waker = self.waker.take();
+        let waker_catch = waker.and_then(|w| {
+            catch_unwind(AUS(|| w.wake())).err()
+        } );
+
+        // TODO: panic propagation
+        // Previous implementation propagates a waker panic to the Scope,
+        // inner future panic to the outer future.
+        let scope = self.scope.take().expect("scope already dropped");
+        if let Some(p) = waker_catch {
+            scope.panicked(p)
+        } else {
+            scope.ok()
+        }
+
         /*
         // So, this is subtle. We know that the type `F` may have some
         // data which is only valid until the end of the scope, and we
