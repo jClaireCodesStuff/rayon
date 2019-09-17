@@ -1,0 +1,3 @@
+TODO: bare trait object
+Update to use dyn or let it be?  Needs code style check.
+
