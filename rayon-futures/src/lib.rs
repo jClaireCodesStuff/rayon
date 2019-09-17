@@ -279,14 +279,14 @@ where
 }
 */
 
-// This is adapted from the implementation of Into<UnsafeNotify> for
+/* // This is adapted from the implementation of Into<UnsafeNotify> for
 // Arc in futures-rs, we need to roll our own to drop the 'static bound.
 // A ScopeFuture that is inside a ArcScopeFuture.
 #[derive(Debug)]
 struct ScopeFutureWrapped<'scope, F: 'scope, S>(PhantomData<(&'scope F, S)>);
 
 unsafe impl<'scope, F, S> Send for ScopeFutureWrapped<'scope, F, S> {}
-unsafe impl<'scope, F, S> Sync for ScopeFutureWrapped<'scope, F, S> {}
+unsafe impl<'scope, F, S> Sync for ScopeFutureWrapped<'scope, F, S> {} */
 
 /* TODO: equivalent to Notify
 impl<'scope, F, S> Notify for ScopeFutureWrapped<'scope, F, S>
