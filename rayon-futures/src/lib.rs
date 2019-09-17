@@ -20,7 +20,7 @@ use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
 use std::any::Any;
 use std::pin::Pin;
 use std::fmt;
-use std::marker::PhantomData;
+//use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 //use std::ptr;
@@ -80,19 +80,10 @@ where
     where
         F: Future + Send + 'scope,
     {
-        unimplemented!();
-        /*
-        let inner = ScopeFuture::spawn(future, self.to_scope_handle());
+        let scope_future = ScopeFuture::spawn(future, self.to_scope_handle());
+        let scope_future = erase_lifetime(scope_future);
 
-        // The trait `ScopeFutureEscapeSafe<T>` only contains methods which are
-        // safe to call even if `'scope` has been escaped.  Because `F` is only
-        // bound by `'scope`, the inner future cannot be accessed this way.
-        // However, it is safe to access non-`'static` results because the
-        // lifetimes of the result type `T` are still in force when a method of
-        // `RayonFuture` is called.
-        return RayonFuture {
-            inner: erase_lifetime(inner),
-        };
+        return RayonFuture { scope_future };
 
         // Because `ScopeFutureEscapeSafe<T>` contains the lifetimes of `T` and
         // can escape any other lifetime `'l`, that lifetime may be erased.
@@ -103,7 +94,6 @@ where
                 mem::transmute(x)
             }
         }
-        */
     }
 }
 
@@ -407,38 +397,33 @@ where
     S: ScopeHandle<'scope>,
 {
     fn spawn(future: F, scope: S) -> Arc<Self> {
-        unimplemented!();
-        /*
         // Using `AssertUnwindSafe` is valid here because (a) the data
         // is `Send + Sync`, which is our usual boundary and (b)
         // panics will be propagated when the `RayonFuture` is polled.
-        let spawn = task::spawn(AssertUnwindSafe(future).catch_unwind());
+        use futures::FutureExt;
+        let inner_future = AssertUnwindSafe(future).catch_unwind();
 
-        let future: Arc<Self> = Arc::new(ScopeFuture::<F, S> {
+        let outer_future: Arc<Self> = Arc::new(ScopeFuture::<F, S> {
             state: AtomicUsize::new(STATE_PARKED),
             contents: Mutex::new(ScopeFutureContents {
-                spawn: None,
+                inner_future: Some(inner_future),
                 this: None,
                 scope: Some(scope),
-                waiting_task: None,
-                result: Ok(Async::NotReady),
+                waker: None,
+                result: Poll::Pending,
                 canceled: false,
             }),
         });
 
-        // Make the two self-cycles. Note that these imply the future
-        // cannot be freed until these fields are set to `None` (which
-        // occurs when it is finished executing).
+        // Become self-referential
         {
-            let mut contents = future.contents.try_lock().unwrap();
-            contents.spawn = Some(spawn);
-            contents.this = Some(ArcScopeFuture(future.clone()));
+            let mut contents = outer_future.contents.try_lock().unwrap();
+            contents.this = Some(outer_future.clone());
         }
 
-        future.notify(0);
+        outer_future.unpark_inherent();
 
-        future
-        */
+        outer_future
     }
 
     /// "Unpark" this `ScopeFuture`.  It enters the appropriate unparked state
