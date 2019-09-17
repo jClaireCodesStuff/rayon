@@ -11,7 +11,7 @@ extern crate futures;
 extern crate rayon_core;
 
 use futures::future::CatchUnwind;
-use futures::task::{Context, Waker};
+use futures::task::{Context, Waker, ArcWake};
 use futures::{Future, Poll};
 //use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
 
@@ -24,7 +24,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 //use std::ptr;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -34,6 +34,37 @@ const STATE_UNPARKED: usize = 1;
 const STATE_EXECUTING: usize = 2;
 const STATE_EXECUTING_UNPARKED: usize = 3;
 const STATE_COMPLETE: usize = 4;
+
+/// Attempt to change an `AtomicUsize` to a different state.
+///
+/// Loads the current state into `*local` and performs one of the following:
+///
+///  - only if the current state is equal to `*local` and `xchg_ordering` is satisfied
+///    - atomically sets the state to `next`
+///    - returns `true`
+///
+///  - otherwise only `load_ordering` is satisfied
+///    - returns `false`
+///
+/// Panics if `load_ordering` is stronger than `xchg_ordering`
+fn change_state(
+    atom: &AtomicUsize,
+    local: &mut usize,
+    next: usize,
+    xchg_ordering: Ordering,
+    load_ordering: Ordering
+) -> bool
+{
+    match atom.compare_exchange_weak(
+        {*local},
+        next,
+        xchg_ordering,
+        load_ordering
+    ) {
+        Ok(x) => { *local = x; true },
+        Err(x) => { *local = x; false }
+    }
+}
 
 pub trait ScopeFutureExt<'scope> {
     fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
@@ -125,9 +156,9 @@ impl<T> Future for RayonFuture<T> {
         }
         // Setting the `waker` doesn't race against other invocations of `poll`
         // because `&mut Self` is required.  It races against polling the inner
-        // future, but this race is serialized by the contents mutex.  
-        // 
-        // Case A: 
+        // future, but this race is serialized by the contents mutex.
+        //
+        // Case A:
         //    `waker` is set before the inner future completes.  It can then be
         //    woken before `get_poll` takes the mutex.  A spurious wakeup can
         //    occur, but spurious wakeups are allowed.
@@ -135,16 +166,16 @@ impl<T> Future for RayonFuture<T> {
         // Case B:
         //    `waker` is set after the inner future completes.  It misses the
         //    wakeup, but `get_poll` happens after `waker` is set happens after
-        //    the result is recorded in contents.  The result is visible and
-        //    no deadlock occurs.
+        //    the result has been recorded in contents.  The result is visible
+        //    and no deadlock occurs.
         //
         // Case C:
         //    `probe` observes and synchronizes with `STATE_COMPLETE`.
         //    `get_poll` happens after the inner future locks the contents,
         //    then reasoning is the same as Case B.
         match self.scope_future.get_poll() {
-            Pending => Pending, 
-            Ready(Ok(x)) => Ready(x), 
+            Pending => Pending,
+            Ready(Ok(x)) => Ready(x),
             Ready(Err(p)) => panic::resume_unwind(p)
         }
     }
@@ -194,7 +225,7 @@ where
 
     // waker to wake the outer task when the inner future completes.
     waker: Option<Waker>,
-    
+
     result: Poll<CUOutput<F>>,
 
     canceled: bool,
@@ -408,22 +439,26 @@ where
         */
     }
 
+    /// "Unpark" this `ScopeFuture`.  It enters the appropriate unparked state
+    /// and schedules itself if needed.
     fn unpark_inherent(&self) {
-        unimplemented!();
-        /*
+        let mut loaded_state = self.state.load(Relaxed);
         loop {
-            match self.state.load(Relaxed) {
+            match loaded_state {
                 STATE_PARKED => {
                     if {
-                        self.state
-                            .compare_exchange_weak(STATE_PARKED, STATE_UNPARKED, Release, Relaxed)
-                            .is_ok()
+                        change_state(
+                            &self.state,
+                            &mut loaded_state,
+                            STATE_UNPARKED,
+                            Release, Relaxed
+                        )
                     } {
                         // Contention here is unlikely but possible: a
                         // previous execution might have moved us to the
                         // PARKED state but not yet released the lock.
                         let contents = self.contents.lock().unwrap();
-                        let task_ref = contents.this.clone().expect("this ref already dropped");
+                        let task_ref = contents.this.clone().expect("this-ref already dropped");
 
                         // We assert that `contents.scope` will be not
                         // be dropped until the task is executed. This
@@ -442,14 +477,13 @@ where
 
                 STATE_EXECUTING => {
                     if {
-                        self.state
-                            .compare_exchange_weak(
-                                STATE_EXECUTING,
-                                STATE_EXECUTING_UNPARKED,
-                                Release,
-                                Relaxed,
-                            )
-                            .is_ok()
+                        change_state(
+                            &self.state,
+                            &mut loaded_state,
+                            STATE_EXECUTING_UNPARKED,
+                            Release,
+                            Relaxed,
+                        )
                     } {
                         return;
                     }
@@ -465,7 +499,6 @@ where
                 }
             }
         }
-        */
     }
 
     fn begin_execute_state(&self) {
@@ -473,25 +506,29 @@ where
         // a worker thread. We should then be executed exactly once,
         // at which point we transiition to STATE_EXECUTING. Nobody
         // should be contending with us to change the state here.
-        let state = self.state.load(Acquire);
-        debug_assert_eq!(state, STATE_UNPARKED);
-        let result = self
-            .state
-            .compare_exchange(state, STATE_EXECUTING, Release, Relaxed);
-        debug_assert_eq!(result, Ok(STATE_UNPARKED));
+        //
+        // TODO: determine the required ordering here.
+        let prev = self.state.compare_exchange(STATE_UNPARKED, STATE_EXECUTING, AcqRel, Relaxed);
+        debug_assert_eq!(prev, Ok(STATE_UNPARKED));
     }
 
+    /// Attempt to exit STATE_EXECUTING.  Returns `false` if the inner future
+    /// has been unparked and should be polled again.
     fn end_execute_state(&self) -> bool {
+        let mut loaded_state = self.state.load(Relaxed);
         loop {
-            match self.state.load(Relaxed) {
+            match loaded_state {
                 STATE_EXECUTING => {
                     if {
-                        self.state
-                            .compare_exchange_weak(STATE_EXECUTING, STATE_PARKED, Release, Relaxed)
-                            .is_ok()
+                        change_state(
+                            &self.state,
+                            &mut loaded_state,
+                            STATE_PARKED,
+                            Release, Relaxed
+                        )
                     } {
                         // We put ourselves into parked state, no need to
-                        // re-execute.  We'll just wait for the Notify.
+                        // re-execute until woken.
                         return true;
                     }
                 }
@@ -499,9 +536,12 @@ where
                 state => {
                     debug_assert_eq!(state, STATE_EXECUTING_UNPARKED);
                     if {
-                        self.state
-                            .compare_exchange_weak(state, STATE_EXECUTING, Release, Relaxed)
-                            .is_ok()
+                        change_state(
+                            &self.state,
+                            &mut loaded_state,
+                            STATE_EXECUTING,
+                            Release, Relaxed
+                        )
                     } {
                         // We finished executing, but an unpark request
                         // came in the meantime.  We need to execute
@@ -661,7 +701,7 @@ where
         // because this method may be called from outside `'scope`.
         let mut contents = self.contents.lock().unwrap();
         let poll_result = mem::replace(&mut contents.result, Poll::Pending);
-        
+
         // Detect being called after the end.  Acquiring the contents mutex
         // ensures that STATE_COMPLETE will be observable because it is stored
         // with that mutex held.  However, returning `PollPending` is the behavior
