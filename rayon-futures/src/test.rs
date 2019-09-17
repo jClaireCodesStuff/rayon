@@ -2,6 +2,9 @@
 
 use super::ScopeFutureExt;
 //use futures::executor::Notify;
+use futures::future::FutureExt;
+use futures::executor::block_on;
+use futures::future::select;
 use futures::future::lazy;
 //use futures::sync::oneshot;
 use futures::task;
@@ -13,11 +16,9 @@ use std::sync::{Arc, Mutex};
 /// Basic test of using futures to data on the stack frame.
 #[test]
 fn future_test() {
-    unimplemented!();
-    /*
     let data = &[0, 1];
 
-    // Here we call `wait` on a select future, which will block at
+    // Here we call `block_on` on a select future, which will block at
     // least one thread. So we need a second thread to ensure no
     // deadlock.
     ThreadPoolBuilder::new()
@@ -28,13 +29,13 @@ fn future_test() {
             scope(|s| {
                 let a = s.spawn_future(futures::future::ok::<_, ()>(&data[0]));
                 let b = s.spawn_future(futures::future::ok::<_, ()>(&data[1]));
-                let (item1, next) = a.select(b).wait().ok().unwrap();
-                let item2 = next.wait().unwrap();
+                let (item1, next) = block_on(select(a,b)).factor_first();
+                let item1 = item1.unwrap();
+                let item2 = block_on(next).unwrap();
                 assert!(*item1 == 0 || *item1 == 1);
                 assert!(*item2 == 1 - *item1);
             });
         });
-    */
 }
 
 /// Test using `map` on a Rayon future. The `map` closure is eecuted
