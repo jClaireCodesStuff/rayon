@@ -1,3 +1,11 @@
 TODO: bare trait object
 Update to use dyn or let it be?  Needs code style check.
 
+TODO: design and document blocking and panicking behavior of fn ::rayon::scope
+
+`RayonFuture<T>` is allowed to escape from `'scope`, but that function can't
+return until the future has been polled to completion.  `RayonFuture<T>` is
+also used to propagate panics, but what happens if this outer future is
+dropped?  If the inner future panics but doesn't panic before the outer future
+is dropped, should the panic be propagated to ::rayon::scope, and if so how
+does this interact with the invariants of trait `ScopeHandle`?
