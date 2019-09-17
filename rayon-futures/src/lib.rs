@@ -69,16 +69,19 @@ fn change_state(
 pub trait ScopeFutureExt<'scope> {
     fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
-        F: Future + Send + 'scope;
+        F: Future + Send + 'scope,
+        <F as Future>::Output: Send;
 }
 
 impl<'scope, T> ScopeFutureExt<'scope> for T
 where
     T: ToScopeHandle<'scope>,
+    <T as ToScopeHandle<'scope>>::ScopeHandle: Send,
 {
     fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
         F: Future + Send + 'scope,
+        <F as Future>::Output: Send
     {
         let scope_future = ScopeFuture::spawn(future, self.to_scope_handle());
         let scope_future = erase_lifetime(scope_future);
@@ -159,7 +162,8 @@ impl<T> fmt::Debug for RayonFuture<T> {
 struct ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     state: AtomicUsize,
     contents: Mutex<ScopeFutureContents<'scope, F, S>>,
@@ -171,7 +175,8 @@ type CUOutput<F> = <CU<F> as Future>::Output;
 struct ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     /* spawn: Option<Spawn<CU<F>>>, */
     //spawn: (), // TODO: equivalent
@@ -197,32 +202,19 @@ where
 impl<'scope, F, S> fmt::Debug for ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("ScopeFutureContents").finish()
     }
 }
 
-// TODO: auto-impl Send + Sync for ScopeFuture
-// Assert that the `*const` is safe to transmit between threads:
-unsafe impl<'scope, F, S> Send for ScopeFuture<'scope, F, S>
-where
-    F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
-{
-}
-unsafe impl<'scope, F, S> Sync for ScopeFuture<'scope, F, S>
-where
-    F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
-{
-}
-
 impl<'scope, F, S> ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     fn spawn(future: F, scope: S) -> Arc<Self> {
         // Using `AssertUnwindSafe` is valid here because (a) the data
@@ -373,7 +365,8 @@ where
 impl<'scope, F, S> ArcWake for ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let this = &*arc_self;
@@ -384,7 +377,8 @@ where
 impl<'scope, F, S> RayonTask for ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
 
     fn execute(this: Arc<Self>) {
@@ -457,7 +451,8 @@ where
 impl<'scope, F, S> ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     fn poll_inner(&mut self, cx: &mut Context) -> Poll<CUOutput<F>> {
         // UNSAFE: `ScopeFutureContents` is Arc-boxed, which
@@ -579,7 +574,8 @@ unsafe trait ScopeFutureEscapeSafe<T>: Send + Sync {
 unsafe impl<'scope, F, S> ScopeFutureEscapeSafe<CUOutput<F>> for ScopeFuture<'scope, F, S>
 where
     F: Future + Send,
-    S: ScopeHandle<'scope>,
+    <F as Future>::Output: Send,
+    S: ScopeHandle<'scope> + Send,
 {
     fn probe(&self) -> bool {
         self.state.load(Acquire) == STATE_COMPLETE

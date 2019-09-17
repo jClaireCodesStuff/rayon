@@ -11,3 +11,6 @@ is dropped, should the panic be propagated to ::rayon::scope, and if so how
 does this interact with the invariants of trait `ScopeHandle`?
 
 TODO: It may be possible to auto-impl Send + Sync for ScopeFuture
+
+TODO: Possible bug with <F as Future>::Item not having Send bound
+
