@@ -105,7 +105,7 @@ where
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
 pub struct RayonFuture<T> {
-    scope_future: Arc<ScopeFutureEscapeSafe<Result<T, Box<dyn Any + Send + 'static>>>>,
+    scope_future: Arc<ScopeFutureEscapeSafe<Result<T, Box<Any + Send + 'static>>>>,
 }
 
 impl<T> Future for RayonFuture<T> {
