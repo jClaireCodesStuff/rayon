@@ -166,6 +166,11 @@ where
     // executing, but it's convenient to keep around normally.
     this: Option<ArcScopeFuture<'scope, F, S>>,
 
+    // the counter in the scope; since the scope doesn't terminate until
+    // counter reaches zero, and we hold a ref in this counter, we are
+    // assured that this pointer remains valid
+    scope: Option<S>,
+
     /* waiting_task: Option<Task>, */
     waiting_task: (), // TODO: needs equivalent
     result: Poll<CUOutput<F>>,

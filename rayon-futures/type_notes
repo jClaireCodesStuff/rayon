@@ -45,17 +45,13 @@ Entry point is
 trait ScopeFutureExt<'scope>
     fn spawn_future<F>
         (&self, future: F) 
-        -> RayonFuture<F::Item, F::Error>
+        -> RayonFuture<F::Output>
     where
         F: Future + Send + 'scope
 
 
-Obviously the return type changes.
-
 struct RayonFuture
     fn rayon_wait(self) -> Result<T, E>
-
-possibly delete that; futures are no longer expected to provide a wait method
 
     impl Drop
     impl Debug
@@ -66,3 +62,69 @@ possibly delete that; futures are no longer expected to provide a wait method
     auto impl Sync
 
 The only required method is `Future::poll`
+
+
+====
+
+`ScopeFuture` and `ScopeFutureContents`
+
+`ScopeFuture` is arc-boxed and exists for as long as rayon cares about the scoped future. `ScopeFutureContents` is protected by a `Mutex`.  Between the two the fields are:
+
+(outside the `Mutex`)
+ - state
+   	STATE_COMPLETE
+	STATE_EXECUTING
+	STATE_EXECUTING_UNPARKED
+	STATE_PARKED
+	STATE_UNPARKED
+(inside the `Mutex`)
+ - spawn 
+	originally `Option<Spawn<CU<F impl Future>>>`
+	the future, if it isn't complete
+ - this
+	Arc-pointer that keeps ScopeFuture alive
+ 
+ - scope Option<S impl ScopeHandle<'scope>>
+	holds the lifetimes of `F` open
+	allows polling the inner future to be spawned
+	as a rayon Task (which is one-shot)
+
+ - waiting_task:
+	originally `Option<Task>`
+	The task that most recently polled the outer future.
+
+ - result: Poll<CUOutput<F>>
+	the result of the inner future
+
+ - canceled: bool
+
+Also related types are 
+ - `ArcScopeFuture`
+	an Arc-pointer to ScopeFuture
+
+ - CU<F> = CatchUnwind<AssertUnwindSafe<F>>
+	`CatchUnwind impl Future` 
+	with the Future::Output transformed to 
+	Result<_, Box<dyn Any + Send + 'static>>
+
+ - CUOutput<F> = <CU<F> as Future>::Output
+	typealias for 
+	Result<{inner Output}, Box<dyn Any + Send + 'static>>
+
+And the type parameters:
+ - F: Future + Send + 'scope
+	the inner Future type
+
+ - S: rayon_core::internal::task::ScopeHandle<'scope>
+ 	`ScopeHandle` is an unsafe trait.  
+	Not sure why I can't get Rustdoc to document it
+	It has three methods:
+        /// Execute a Task once.
+        /// UNSAFE: do not drop or consume S until the task
+        /// has executed.  The other methods consume S
+	unsafe fn spawn_task
+		(&self, task: Arc<T impl Task + 'scope>)
+
+	fn panicked(self, err: Box<Any + Send>);
+	fn ok(self)
+g
