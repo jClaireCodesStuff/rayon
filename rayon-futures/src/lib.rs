@@ -11,13 +11,13 @@ extern crate futures;
 extern crate rayon_core;
 
 use futures::future::CatchUnwind;
-use futures::task::Context;
+use futures::task::{Context, Waker};
 use futures::{Future, Poll};
 //use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
 
 //use futures::executor;
 use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
-//use std::any::Any;
+use std::any::Any;
 use std::pin::Pin;
 use std::fmt;
 use std::marker::PhantomData;
@@ -84,7 +84,7 @@ where
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
 pub struct RayonFuture<T> {
-    inner: Arc<ScopeFutureEscapeSafe<T>>,
+    scope_future: Arc<ScopeFutureEscapeSafe<Result<T, Box<dyn Any + Send + 'static>>>>,
 }
 
 /* impl<T> RayonFuture<T> {
@@ -120,6 +120,15 @@ impl<T> Future for RayonFuture<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
         unimplemented!();
+        use Poll::*;
+        match self.scope_future.get_poll() {
+            Pending => {
+                self.scope_future.set_waker_by_ref(cx.waker());
+                Pending
+            },
+            Ready(Ok(x)) => Ready(x),
+            Ready(Err(p)) => panic::resume_unwind(p)
+        }
         /*
         match self.inner.poll() {
             Ok(Async::Ready(Ok(v))) => Ok(Async::Ready(v)),
@@ -133,7 +142,7 @@ impl<T> Future for RayonFuture<T> {
 
 impl<T> Drop for RayonFuture<T> {
     fn drop(&mut self) {
-        self.inner.cancel();
+        self.scope_future.cancel();
     }
 }
 
@@ -615,13 +624,16 @@ unsafe trait ScopeFutureEscapeSafe<T>: Send + Sync {
     /// Synchronizes with that state transition.
     fn probe(&self) -> bool;
 
-    /// Polls for the result of the inner future.  Returns `Poll::Pending` if
-    /// the inner future has not completed.  The result of polling after this
-    /// method has returned `Ready` is unspecified but safe.
-    fn poll(&self) -> Poll<T>;
+    /// Get the most recent `Poll` result of the inner future F.  The result of
+    /// polling after this method has returned `Ready` is unspecified but safe.
+    fn get_poll(&self) -> Poll<T>;
 
     /// Advises that the outer future has been dropped.
     fn cancel(&self);
+
+    /// Set the Waker that will be activated when the inner future completes or
+    /// panics.
+    fn set_waker_by_ref(&self, &Waker);
 }
 
 unsafe impl<'scope, F, S> ScopeFutureEscapeSafe<CUOutput<F>> for ScopeFuture<'scope, F, S>
@@ -633,7 +645,7 @@ where
         self.state.load(Acquire) == STATE_COMPLETE
     }
 
-    fn poll(&self) -> Poll<CUOutput<F>> {
+    fn get_poll(&self) -> Poll<CUOutput<F>> {
         // UNSAFE: the Future `F` must not be polled or otherwise borrowed here
         // because this method may be called from outside `'scope`.
         unimplemented!();
@@ -676,6 +688,10 @@ where
             u.notify(0);
         }
         */
+    }
+
+    fn set_waker_by_ref(&self, w: &Waker) {
+        unimplemented!();
     }
 }
 

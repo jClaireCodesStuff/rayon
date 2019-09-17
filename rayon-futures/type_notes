@@ -133,4 +133,5 @@ And the type parameters:
 `ScopeFutureTrait` is a confusing name, changing to
 `ScopeFutureEscapeSafe`
 
-This trait contains methods which can be safely called even if `'scope` has been escaped
+This trait contains methods which can be safely called even if `'scope` has been escaped.
+
