@@ -127,4 +127,10 @@ And the type parameters:
 
 	fn panicked(self, err: Box<Any + Send>);
 	fn ok(self)
-g
+
+===
+
+`ScopeFutureTrait` is a confusing name, changing to
+`ScopeFutureEscapeSafe`
+
+This trait contains methods which can be safely called even if `'scope` has been escaped

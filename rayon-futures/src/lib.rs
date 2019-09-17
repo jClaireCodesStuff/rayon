@@ -50,25 +50,27 @@ where
         F: Future + Send + 'scope,
     {
         unimplemented!();
-        /* 
+        /*
         let inner = ScopeFuture::spawn(future, self.to_scope_handle());
 
-        // We assert that it is safe to hide the type `F` (and, in
-        // particular, the lifetimes in it). This is true because the API
-        // offered by a `RayonFuture` only permits access to the result of
-        // the future (of type `F::Item` or `F::Error`) and those types
-        // *are* exposed in the `RayonFuture<F::Item, F::Error>` type. See
-        // README.md for details.
-        unsafe {
-            return RayonFuture {
-                inner: hide_lifetime(inner),
-            };
-        }
+        // The trait `ScopeFutureEscapeSafe<T>` only contains methods which are
+        // safe to call even if `'scope` has been escaped.  Because `F` is only
+        // bound by `'scope`, the inner future cannot be accessed this way.
+        // However, it is safe to access non-`'static` results because the
+        // lifetimes of the result type `T` are still in force when a method of
+        // `RayonFuture` is called.
+        return RayonFuture {
+            inner: erase_lifetime(inner),
+        };
 
-        unsafe fn hide_lifetime<'l, T>(
-            x: Arc<ScopeFutureTrait<T> + 'l>,
-        ) -> Arc<ScopeFutureTrait<T>> {
-            mem::transmute(x)
+        // Because `ScopeFutureEscapeSafe<T>` contains the lifetimes of `T` and
+        // can escape any other lifetime `'l`, that lifetime may be erased.
+        fn erase_lifetime<'l, T>(
+            x: Arc<ScopeFutureEscapeSafe<T> + 'l>,
+        ) -> Arc<ScopeFutureEscapeSafe<T>> {
+            unsafe {
+                mem::transmute(x)
+            }
         }
         */
     }
@@ -82,7 +84,7 @@ where
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
 pub struct RayonFuture<T> {
-    inner: Arc<ScopeFutureTrait<T>>,
+    inner: Arc<ScopeFutureEscapeSafe<T>>,
 }
 
 /* impl<T> RayonFuture<T> {
@@ -117,7 +119,7 @@ impl<T> Future for RayonFuture<T> {
     } */
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
-        unimplemented!(); 
+        unimplemented!();
         /*
         match self.inner.poll() {
             Ok(Async::Ready(Ok(v))) => Ok(Async::Ready(v)),
@@ -604,20 +606,25 @@ where
     }
 }
 
-trait ScopeFutureTrait<T>: Send + Sync {
-    /// Returns true when future is in the COMPLETE state.
+/// Methods of `ScopeFuture` which remain safe to call even if `'scope` is escaped.
+///
+/// UNSAFE: Implementations of these methods may not access `F`, the inner future.
+unsafe trait ScopeFutureEscapeSafe<T>: Send + Sync {
+    /// Returns true if the future has entered the COMPLETE state.
+    ///
+    /// Synchronizes with that state transition.
     fn probe(&self) -> bool;
 
-    /// Execute the `poll` operation of a future: read the result if
-    /// it is ready, return `Async::NotReady` otherwise.
+    /// Polls for the result of the inner future.  Returns `Poll::Pending` if
+    /// the inner future has not completed.  The result of polling after this
+    /// method has returned `Ready` is unspecified but safe.
     fn poll(&self) -> Poll<T>;
 
-    /// Indicate that we no longer care about the result of the future.
-    /// Corresponds to `Drop` in the future trait.
+    /// Advises that the outer future has been dropped.
     fn cancel(&self);
 }
 
-impl<'scope, F, S> ScopeFutureTrait<CUOutput<F>> for ScopeFuture<'scope, F, S>
+unsafe impl<'scope, F, S> ScopeFutureEscapeSafe<CUOutput<F>> for ScopeFuture<'scope, F, S>
 where
     F: Future + Send,
     S: ScopeHandle<'scope>,
@@ -627,6 +634,8 @@ where
     }
 
     fn poll(&self) -> Poll<CUOutput<F>> {
+        // UNSAFE: the Future `F` must not be polled or otherwise borrowed here
+        // because this method may be called from outside `'scope`.
         unimplemented!();
         /*
         // Important: due to transmute hackery, not all the fields are
