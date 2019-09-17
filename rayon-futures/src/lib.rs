@@ -242,7 +242,7 @@ where
     }
 }
 
-// Newtype so we can implement Into<UnsafeNotify> even though the contents are not 'static.
+/*// Newtype so we can implement Into<UnsafeNotify> even though the contents are not 'static.
 #[derive(Debug)]
 struct ArcScopeFuture<'scope, F, S>(Arc<ScopeFuture<'scope, F, S>>)
 where
@@ -257,7 +257,7 @@ where
     fn clone(&self) -> Self {
         ArcScopeFuture(self.0.clone())
     }
-}
+}*/
 
 /* TODO: equivalent to Notify
 impl<'scope, F, S> Notify for ArcScopeFuture<'scope, F, S>
