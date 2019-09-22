@@ -197,53 +197,6 @@ fn panicy_waker() {
     panic::resume_unwind(scope_res.unwrap_err());
 }
 
-
-#[test]
-#[should_panic(expected = "Hello, world!")]
-fn panicy_unpark() {
-    unimplemented!();
-    /*
-    scope(|s| {
-        let (a_tx, a_rx) = oneshot::channel::<u32>();
-        let rf = s.spawn_future(a_rx);
-
-        // invoke `poll_future` with a `PanicUnpark` instance;
-        // this should get installed as a 'waiting task' on the
-        // Rayon future `rf`
-        let mut spawn = task::spawn(rf);
-        match spawn.poll_future_notify(&PANIC_UNPARK, 0) {
-            Ok(Async::NotReady) => {
-                // good, we expect not to be ready yet
-            }
-            r => panic!("spawn poll returned: {:?}", r),
-        }
-
-        // this should trigger the future `a_rx` to be awoken
-        // and executing in a Rayon background thread
-        a_tx.send(22).unwrap();
-
-        // now we wait for `rf` to complete; when it does, it will
-        // also signal the `PanicUnpark` to wake up (that is
-        // *supposed* to be what triggers us to `poll` again, but
-        // we are sidestepping that)
-        let v = spawn.into_inner().rayon_wait().unwrap();
-        assert_eq!(v, 22);
-    });
-    panic!("scope failed to panic!");
-
-    #[derive(Clone)]
-    struct PanicUnpark;
-
-    impl Notify for PanicUnpark {
-        fn notify(&self, _: usize) {
-            panic!("Hello, world!");
-        }
-    }
-
-    const PANIC_UNPARK: &'static PanicUnpark = &PanicUnpark;
-    */
-}
-
 #[test]
 fn double_unpark() {
     unimplemented!();
