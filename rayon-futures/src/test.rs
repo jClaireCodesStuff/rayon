@@ -38,28 +38,31 @@ fn future_test() {
         });
 }
 
-/// Test using `map` on a Rayon future. The `map` closure is eecuted
+/// Test using `map` on a Rayon future. The `map` closure is executed 
 /// for side-effects, and modifies the `data` variable that is owned
 /// by enclosing stack frame.
 #[test]
 fn future_map() {
-    unimplemented!();
-    /*
-    let data = &mut [format!("Hello, ")];
+    let data = &mut ["Hello, ".to_string()];
+
+    let data_as_mut = async {
+        &mut data[0]
+    };
+
+    fn mutate_string(s: &mut String) {
+        s.push_str("world!");
+    }
 
     let mut future = None;
     scope(|s| {
-        let a = s.spawn_future(lazy(|| Ok::<_, ()>(&mut data[0])));
-        future = Some(s.spawn_future(a.map(|v| {
-            v.push_str("world!");
-        })));
+        let a = s.spawn_future(data_as_mut);
+        future = Some(s.spawn_future(a.map(mutate_string)));
     });
 
     // future must have executed for the scope to have ended, even
     // though we never invoked `wait` to observe its result
     assert_eq!(data[0], "Hello, world!");
     assert!(future.is_some());
-    */
 }
 
 /// Test that we can create a future that returns an `&mut` to data,
