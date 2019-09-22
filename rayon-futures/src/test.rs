@@ -5,9 +5,10 @@ use super::ScopeFutureExt;
 
 use futures::executor::block_on;
 use futures::future::select;
-use futures::FutureExt;
+use futures::{Future, FutureExt};
 
 //use futures::sync::oneshot;
+
 
 use futures::{self};
 use rayon_core::{scope, ThreadPoolBuilder};
@@ -91,23 +92,11 @@ fn future_panic_prop() {
         });
         block_on(future);
     });
-    /*
-    scope(|s| {
-        let future = s.spawn_future(lazy(move || Ok::<(), ()>(argh())));
-        let _ = future.rayon_wait(); // should panic, not return a value
-    });
-
-    fn argh() -> () {
-        if true {
-            panic!("Hello, world!");
-        }
-    }
-    */
 }
 
 /// Test that, even if we have only one thread, invoke `rayon_wait`
 /// will not panic.
-#[test]
+/* #[test]
 fn future_rayon_wait_1_thread() {
     unimplemented!();
     /*
@@ -131,11 +120,11 @@ fn future_rayon_wait_1_thread() {
         });
     assert_eq!(result, Some(22));
     */
-}
+} */
 
 /// Test that invoking `wait` on a `RayonFuture` will panic, if it is inside
 /// a Rayon worker thread.
-#[test]
+/* #[test]
 #[should_panic]
 fn future_wait_panics_inside_rayon_thread() {
     unimplemented!();
@@ -145,11 +134,11 @@ fn future_wait_panics_inside_rayon_thread() {
         let _ = future.wait(); // should panic, not return a value
     });
     */
-}
+} */
 
 /// Test that invoking `wait` on a `RayonFuture` will not panic if we
 /// are outside a Rayon worker thread.
-#[test]
+/* #[test]
 fn future_wait_works_outside_rayon_threads() {
     unimplemented!();
     /*
@@ -159,10 +148,56 @@ fn future_wait_works_outside_rayon_threads() {
     });
     assert_eq!(Ok(()), future.unwrap().wait());
     */
+} */
+
+/// `scope` should panic if `Waker::wake` panics.
+#[test]
+#[should_panic(expected = "Hello, world!")]
+fn panicy_waker() {
+    use crate::futures::task;
+    use crate::futures::channel::oneshot;
+    use std::sync::Arc;
+    use std::pin::Pin;
+
+    // should reach end of scope but panic when scope returns.
+    use std::panic;
+    let mut reached_end_of_scope = false;
+
+    struct PanicWake;
+    impl task::ArcWake for PanicWake {
+        fn wake_by_ref(_arc_self: &Arc<Self>) {
+            panic!("Hello, world!");
+        }
+    }
+
+    let arc_pw = Arc::new(PanicWake);
+    let waker_pw = task::waker(arc_pw);
+
+    use panic::AssertUnwindSafe;
+    let scope_res = panic::catch_unwind(AssertUnwindSafe(|| scope(|s| {
+        let (tx, rx) = oneshot::channel::<i32>();
+        let inner_future = async {
+            let x = rx.await;
+            assert_eq!(x.unwrap(), 22);
+        };
+        let mut outer_future = s.spawn_future(inner_future);
+        // `spawn_future` executes eagerly.  Register the pancy waker as
+        // waiting on the outer future.
+        {
+            let mut cx = task::Context::from_waker(&waker_pw);
+            let p = (Pin::new(&mut outer_future)).poll(&mut cx);
+            assert!(p.is_pending());
+        }
+        // Now wake the inner future
+        tx.send(22).unwrap();
+        // Should not panic before the end of the scope
+        reached_end_of_scope = true;
+    })));
+    assert!(reached_end_of_scope);
+    panic::resume_unwind(scope_res.unwrap_err());
 }
 
-/// Test that invoking `wait` on a `RayonFuture` will not panic if we
-/// are outside a Rayon worker thread.
+
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn panicy_unpark() {
