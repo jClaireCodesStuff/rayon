@@ -9,9 +9,8 @@ use futures::{Future, FutureExt};
 
 //use futures::sync::oneshot;
 
-
-use futures::{self};
-use rayon_core::{scope, ThreadPoolBuilder};
+use futures;
+use rayon_core::{scope, ThreadPool, ThreadPoolBuilder};
 
 
 
@@ -256,27 +255,32 @@ fn double_unpark() {
     */
 } */
 
+// Test two global-pool futures, one needing data from the other.
 #[test]
-fn async_future_map() {
-    unimplemented!();
-    /*
-    let data = Arc::new(Mutex::new(format!("Hello, ")));
+fn global_future_map() {
+    use std::sync::{Arc, Mutex};
 
+    let data = Arc::new(Mutex::new("Hello, ".to_string()));
+    
     let pool = ThreadPool::global();
-    let a = pool.spawn_future(lazy({
+
+    let outer_future_a;
+    {
         let data = data.clone();
-        move || Ok::<_, ()>(data)
-    }));
-    let future = pool.spawn_future(a.map(|data| {
+        outer_future_a = pool.spawn_future(async move {
+            data
+        });
+    }
+
+    let outer_future_b = pool.spawn_future(async move {
+        let data = outer_future_a.await;
         let mut v = data.lock().unwrap();
         v.push_str("world!");
-    }));
-    let () = future.wait().unwrap();
+    });
 
-    // future must have executed for the scope to have ended, even
-    // though we never invoked `wait` to observe its result
-    assert_eq!(&data.lock().unwrap()[..], "Hello, world!");
-    */
+    block_on(outer_future_b);
+
+    assert_eq!(data.lock().unwrap().as_str(), "Hello, world!");
 }
 
 #[test]
