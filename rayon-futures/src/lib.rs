@@ -112,7 +112,7 @@ impl<T> Future for RayonFuture<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
-        use Poll::*;
+        use crate::Poll::*;
         if !self.scope_future.probe() {
             self.scope_future.set_waker_by_ref(cx.waker());
         }
@@ -388,7 +388,7 @@ where
 {
 
     fn execute(this: Arc<Self>) {
-        use Poll::*;
+        use crate::Poll::*;
         // Futures-0.3 requires creating a `Context` before polling async code.
         let waker = futures::task::waker(this.clone());
         let mut cx = Context::from_waker(&waker);
@@ -491,8 +491,8 @@ where
         this.state.store(STATE_COMPLETE, Release);
 
         // PANIC: The outer waker is arbitrary user code
-        use panic::AssertUnwindSafe as AUS;
-        use panic::catch_unwind;
+        use crate::panic::AssertUnwindSafe as AUS;
+        use crate::panic::catch_unwind;
         let waker = self.waker.take();
         let waker_catch = waker.and_then(|w| {
             catch_unwind(AUS(|| w.wake())).err()
@@ -573,7 +573,7 @@ unsafe trait ScopeFutureEscapeSafe<T>: Send + Sync {
 
     /// Set the Waker that will be activated when the inner future completes or
     /// panics.
-    fn set_waker_by_ref(&self, &Waker);
+    fn set_waker_by_ref(&self, _: &Waker);
 }
 
 unsafe impl<'scope, F, S> ScopeFutureEscapeSafe<CUOutput<F>> for ScopeFuture<'scope, F, S>

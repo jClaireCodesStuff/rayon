@@ -2,16 +2,16 @@
 
 use super::ScopeFutureExt;
 //use futures::executor::Notify;
-use futures::future::FutureExt;
+
 use futures::executor::block_on;
 use futures::future::select;
-use futures::future::lazy;
+
 //use futures::sync::oneshot;
-use futures::task;
-use futures::{self, Poll, Future};
-use rayon_core::{scope, ThreadPool, ThreadPoolBuilder};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+
+use futures::{self};
+use rayon_core::{scope, ThreadPoolBuilder};
+
+
 
 /// Basic test of using futures to data on the stack frame.
 #[test]
@@ -43,6 +43,8 @@ fn future_test() {
 /// by enclosing stack frame.
 #[test]
 fn future_map() {
+    unimplemented!();
+    /*
     let data = &mut ["Hello, ".to_string()];
 
     let data_as_mut = async {
@@ -63,6 +65,7 @@ fn future_map() {
     // though we never invoked `wait` to observe its result
     assert_eq!(data[0], "Hello, world!");
     assert!(future.is_some());
+    */
 }
 
 /// Test that we can create a future that returns an `&mut` to data,
