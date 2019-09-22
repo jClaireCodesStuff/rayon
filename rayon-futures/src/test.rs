@@ -197,7 +197,7 @@ fn panicy_waker() {
     panic::resume_unwind(scope_res.unwrap_err());
 }
 
-#[test]
+/* #[test]
 fn double_unpark() {
     unimplemented!();
     /*
@@ -254,7 +254,7 @@ fn double_unpark() {
         }
     }
     */
-}
+} */
 
 #[test]
 fn async_future_map() {
