@@ -85,7 +85,12 @@ fn future_escape_ref() {
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn future_panic_prop() {
-    unimplemented!();
+    scope(|s| {
+        let future = s.spawn_future(async { 
+            panic!("Hello, world!");
+        });
+        block_on(future);
+    });
     /*
     scope(|s| {
         let future = s.spawn_future(lazy(move || Ok::<(), ()>(argh())));
