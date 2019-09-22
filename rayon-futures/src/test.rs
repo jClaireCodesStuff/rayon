@@ -5,6 +5,7 @@ use super::ScopeFutureExt;
 
 use futures::executor::block_on;
 use futures::future::select;
+use futures::FutureExt;
 
 //use futures::sync::oneshot;
 
@@ -43,51 +44,42 @@ fn future_test() {
 /// by enclosing stack frame.
 #[test]
 fn future_map() {
-    unimplemented!();
-    /*
     let data = &mut ["Hello, ".to_string()];
 
     let data_as_mut = async {
         &mut data[0]
     };
 
-    fn mutate_string(s: &mut String) {
-        s.push_str("world!");
-    }
-
     let mut future = None;
     scope(|s| {
         let a = s.spawn_future(data_as_mut);
-        future = Some(s.spawn_future(a.map(mutate_string)));
+        future = Some(s.spawn_future(a.map(|s| s.push_str("world!"))));
     });
 
     // future must have executed for the scope to have ended, even
     // though we never invoked `wait` to observe its result
     assert_eq!(data[0], "Hello, world!");
     assert!(future.is_some());
-    */
 }
 
 /// Test that we can create a future that returns an `&mut` to data,
 /// so long as it outlives the scope.
 #[test]
 fn future_escape_ref() {
-    unimplemented!();
-    /*
-    let data = &mut [format!("Hello, ")];
+    let data = &mut ["Hello, ".to_string()];
 
     {
         let mut future = None;
         scope(|s| {
-            let data = &mut *data;
-            future = Some(s.spawn_future(lazy(move || Ok::<_, ()>(&mut data[0]))));
+            future = Some(s.spawn_future(async {
+                &mut data[0]
+            }));
         });
-        let s = future.unwrap().wait().unwrap();
+        let s = block_on(future.unwrap());
         s.push_str("world!");
     }
 
     assert_eq!(data[0], "Hello, world!");
-    */
 }
 
 #[test]
