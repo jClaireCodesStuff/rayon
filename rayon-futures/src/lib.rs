@@ -3,7 +3,6 @@
 //! See `README.md` for details.
 #![deny(missing_debug_implementations)]
 #![doc(html_root_url = "https://docs.rs/rayon-futures/0.1")]
-
 // TODO: bare trait object
 #![allow(bare_trait_objects)]
 
@@ -11,21 +10,21 @@ extern crate futures;
 extern crate rayon_core;
 
 use futures::future::CatchUnwind;
-use futures::task::{Context, Waker, ArcWake};
+use futures::task::{ArcWake, Context, Waker};
 use futures::{Future, Poll};
 //use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
 
 //use futures::executor;
 use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
 use std::any::Any;
-use std::pin::Pin;
 use std::fmt;
+use std::pin::Pin;
 //use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 //use std::ptr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::atomic::Ordering::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -52,17 +51,17 @@ fn change_state(
     local: &mut usize,
     next: usize,
     xchg_ordering: Ordering,
-    load_ordering: Ordering
-) -> bool
-{
-    match atom.compare_exchange_weak(
-        {*local},
-        next,
-        xchg_ordering,
-        load_ordering
-    ) {
-        Ok(x) => { *local = x; true },
-        Err(x) => { *local = x; false }
+    load_ordering: Ordering,
+) -> bool {
+    match atom.compare_exchange_weak({ *local }, next, xchg_ordering, load_ordering) {
+        Ok(x) => {
+            *local = x;
+            true
+        }
+        Err(x) => {
+            *local = x;
+            false
+        }
     }
 }
 
@@ -90,9 +89,7 @@ where
         fn erase_lifetime<'l, T>(
             x: Arc<ScopeFutureEscapeSafe<T> + 'l>,
         ) -> Arc<ScopeFutureEscapeSafe<T>> {
-            unsafe {
-                mem::transmute(x)
-            }
+            unsafe { mem::transmute(x) }
         }
     }
 }
@@ -138,7 +135,7 @@ impl<T> Future for RayonFuture<T> {
         match self.scope_future.get_poll() {
             Pending => Pending,
             Ready(Ok(x)) => Ready(x),
-            Ready(Err(p)) => panic::resume_unwind(p)
+            Ready(Err(p)) => panic::resume_unwind(p),
         }
     }
 }
@@ -173,8 +170,6 @@ where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-    /* spawn: Option<Spawn<CU<F>>>, */
-    //spawn: (), // TODO: equivalent
     inner_future: Option<CU<F>>,
 
     // Pointer to ourselves. We `None` this out when we are finished
@@ -266,7 +261,8 @@ where
                             &self.state,
                             &mut loaded_state,
                             STATE_UNPARKED,
-                            Release, Relaxed
+                            Release,
+                            Relaxed,
                         )
                     } {
                         // Contention here is unlikely but possible: a
@@ -323,7 +319,9 @@ where
         // should be contending with us to change the state here.
         //
         // TODO: determine the required ordering here.
-        let prev = self.state.compare_exchange(STATE_UNPARKED, STATE_EXECUTING, AcqRel, Relaxed);
+        let prev = self
+            .state
+            .compare_exchange(STATE_UNPARKED, STATE_EXECUTING, AcqRel, Relaxed);
         debug_assert_eq!(prev, Ok(STATE_UNPARKED));
     }
 
@@ -339,7 +337,8 @@ where
                             &self.state,
                             &mut loaded_state,
                             STATE_PARKED,
-                            Release, Relaxed
+                            Release,
+                            Relaxed,
                         )
                     } {
                         // We put ourselves into parked state, no need to
@@ -355,7 +354,8 @@ where
                             &self.state,
                             &mut loaded_state,
                             STATE_EXECUTING,
-                            Release, Relaxed
+                            Release,
+                            Relaxed,
                         )
                     } {
                         // We finished executing, but an unpark request
@@ -386,7 +386,6 @@ where
     F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-
     fn execute(this: Arc<Self>) {
         use crate::Poll::*;
         // Futures-0.3 requires creating a `Context` before polling async code.
@@ -406,7 +405,7 @@ where
             // Then check for cancellation.
             if contents.canceled {
                 contents.complete(Pending);
-                return
+                return;
             }
 
             match contents.poll_inner(&mut cx) {
@@ -414,7 +413,7 @@ where
                     if this.end_execute_state() {
                         return;
                     }
-                },
+                }
                 polled_complete => {
                     contents.complete(polled_complete);
                     return;
@@ -463,7 +462,11 @@ where
         // UNSAFE: `ScopeFutureContents` is Arc-boxed, which
         // satisfies `Pin` even if the inner future is `!Unpin`.
         let inner_future = unsafe {
-            Pin::new_unchecked(self.inner_future.as_mut().expect("inner future already dropped"))
+            Pin::new_unchecked(
+                self.inner_future
+                    .as_mut()
+                    .expect("inner future already dropped"),
+            )
         };
         inner_future.poll(cx)
         //unimplemented!();
@@ -491,12 +494,10 @@ where
         this.state.store(STATE_COMPLETE, Release);
 
         // PANIC: The outer waker is arbitrary user code
-        use crate::panic::AssertUnwindSafe as AUS;
         use crate::panic::catch_unwind;
+        use crate::panic::AssertUnwindSafe as AUS;
         let waker = self.waker.take();
-        let waker_catch = waker.and_then(|w| {
-            catch_unwind(AUS(|| w.wake())).err()
-        } );
+        let waker_catch = waker.and_then(|w| catch_unwind(AUS(|| w.wake())).err());
 
         // TODO: panic propagation
         // Previous implementation propagates a waker panic to the Scope,
@@ -627,9 +628,8 @@ where
         // If the `this` we grabbed was not `None`, then notify it.
         // This will schedule the future.
         if let Some(ref u) = contents.this {
-            
+
         }*/
-        
     }
 
     fn set_waker_by_ref(&self, w: &Waker) {

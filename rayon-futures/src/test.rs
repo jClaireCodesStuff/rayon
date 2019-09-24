@@ -12,8 +12,6 @@ use futures::{Future, FutureExt};
 use futures;
 use rayon_core::{scope, ThreadPool, ThreadPoolBuilder};
 
-
-
 /// Basic test of using futures to data on the stack frame.
 #[test]
 fn future_test() {
@@ -30,7 +28,7 @@ fn future_test() {
             scope(|s| {
                 let a = s.spawn_future(futures::future::ok::<_, ()>(&data[0]));
                 let b = s.spawn_future(futures::future::ok::<_, ()>(&data[1]));
-                let (item1, next) = block_on(select(a,b)).factor_first();
+                let (item1, next) = block_on(select(a, b)).factor_first();
                 let item1 = item1.unwrap();
                 let item2 = block_on(next).unwrap();
                 assert!(*item1 == 0 || *item1 == 1);
@@ -39,16 +37,14 @@ fn future_test() {
         });
 }
 
-/// Test using `map` on a Rayon future. The `map` closure is executed 
+/// Test using `map` on a Rayon future. The `map` closure is executed
 /// for side-effects, and modifies the `data` variable that is owned
 /// by enclosing stack frame.
 #[test]
 fn future_map() {
     let data = &mut ["Hello, ".to_string()];
 
-    let data_as_mut = async {
-        &mut data[0]
-    };
+    let data_as_mut = async { &mut data[0] };
 
     let mut future = None;
     scope(|s| {
@@ -71,9 +67,7 @@ fn future_escape_ref() {
     {
         let mut future = None;
         scope(|s| {
-            future = Some(s.spawn_future(async {
-                &mut data[0]
-            }));
+            future = Some(s.spawn_future(async { &mut data[0] }));
         });
         let s = block_on(future.unwrap());
         s.push_str("world!");
@@ -86,7 +80,7 @@ fn future_escape_ref() {
 #[should_panic(expected = "Hello, world!")]
 fn future_panic_prop() {
     scope(|s| {
-        let future = s.spawn_future(async { 
+        let future = s.spawn_future(async {
             panic!("Hello, world!");
         });
         block_on(future);
@@ -153,10 +147,10 @@ fn future_wait_works_outside_rayon_threads() {
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn panicy_waker() {
-    use crate::futures::task;
     use crate::futures::channel::oneshot;
-    use std::sync::Arc;
+    use crate::futures::task;
     use std::pin::Pin;
+    use std::sync::Arc;
 
     // should reach end of scope but panic when scope returns.
     use std::panic;
@@ -173,25 +167,27 @@ fn panicy_waker() {
     let waker_pw = task::waker(arc_pw);
 
     use panic::AssertUnwindSafe;
-    let scope_res = panic::catch_unwind(AssertUnwindSafe(|| scope(|s| {
-        let (tx, rx) = oneshot::channel::<i32>();
-        let inner_future = async {
-            let x = rx.await;
-            assert_eq!(x.unwrap(), 22);
-        };
-        let mut outer_future = s.spawn_future(inner_future);
-        // `spawn_future` executes eagerly.  Register the pancy waker as
-        // waiting on the outer future.
-        {
-            let mut cx = task::Context::from_waker(&waker_pw);
-            let p = (Pin::new(&mut outer_future)).poll(&mut cx);
-            assert!(p.is_pending());
-        }
-        // Now wake the inner future
-        tx.send(22).unwrap();
-        // Should not panic before the end of the scope
-        reached_end_of_scope = true;
-    })));
+    let scope_res = panic::catch_unwind(AssertUnwindSafe(|| {
+        scope(|s| {
+            let (tx, rx) = oneshot::channel::<i32>();
+            let inner_future = async {
+                let x = rx.await;
+                assert_eq!(x.unwrap(), 22);
+            };
+            let mut outer_future = s.spawn_future(inner_future);
+            // `spawn_future` executes eagerly.  Register the pancy waker as
+            // waiting on the outer future.
+            {
+                let mut cx = task::Context::from_waker(&waker_pw);
+                let p = (Pin::new(&mut outer_future)).poll(&mut cx);
+                assert!(p.is_pending());
+            }
+            // Now wake the inner future
+            tx.send(22).unwrap();
+            // Should not panic before the end of the scope
+            reached_end_of_scope = true;
+        })
+    }));
     assert!(reached_end_of_scope);
     panic::resume_unwind(scope_res.unwrap_err());
 }
@@ -261,15 +257,13 @@ fn global_future_map() {
     use std::sync::{Arc, Mutex};
 
     let data = Arc::new(Mutex::new("Hello, ".to_string()));
-    
+
     let pool = ThreadPool::global();
 
     let outer_future_a;
     {
         let data = data.clone();
-        outer_future_a = pool.spawn_future(async move {
-            data
-        });
+        outer_future_a = pool.spawn_future(async move { data });
     }
 
     let outer_future_b = pool.spawn_future(async move {
@@ -286,35 +280,33 @@ fn global_future_map() {
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn async_future_panic_prop() {
-    unimplemented!();
-    /*
-    let pool = ThreadPool::global();
-    let future = pool.spawn_future(lazy(move || Ok::<(), ()>(argh())));
-    let _ = future.rayon_wait(); // should panic, not return a value
+    use std::panic::{self, AssertUnwindSafe};
+    let inner_future = async {
+        panic!("Hello, world!");
+    };
 
-    fn argh() -> () {
-        if true {
-            panic!("Hello, world!");
-        }
-    }
-    */
+    let pool = ThreadPool::global();
+    let outer_future = pool.spawn_future(inner_future);
+
+    let res = panic::catch_unwind(AssertUnwindSafe(|| {
+        block_on(outer_future);
+    }));
+
+    panic::resume_unwind(res.err().unwrap());
 }
 
 #[test]
 fn async_future_scope_interact() {
-    unimplemented!();
-    /*
     let pool = ThreadPool::global();
-    let future = pool.spawn_future(lazy(move || Ok::<usize, ()>(22)));
+    let future = pool.spawn_future(async { 22 });
 
     let mut vec = vec![];
     scope(|s| {
         let future = s.spawn_future(future.map(|x| x * 2));
         s.spawn(|_| {
-            vec.push(future.rayon_wait().unwrap());
+            vec.push(block_on(future));
         }); // just because
     });
 
     assert_eq!(vec![44], vec);
-    */
 }
