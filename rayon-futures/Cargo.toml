@@ -1,9 +1,10 @@
 [package]
 name = "rayon-futures"
 edition = "2018"
-version = "0.1.0" # reminder to update html_root_url attribute
+version = "0.3.0" # reminder to update html_root_url attribute
 authors = ["Niko Matsakis <niko@alum.mit.edu>",
-           "Josh Stone <cuviper@gmail.com>"]
+           "Josh Stone <cuviper@gmail.com>",
+           "J Claire <jClaireCodesStuff@users.noreply.github.com>"]
 description = "Futures integration into Rayon"
 license = "Apache-2.0/MIT"
 repository = "https://github.com/rayon-rs/rayon"
