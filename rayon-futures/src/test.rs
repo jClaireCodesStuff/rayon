@@ -1,15 +1,12 @@
 #![cfg(test)]
 
 use super::ScopeFutureExt;
-//use futures::executor::Notify;
 
+use futures;
 use futures::executor::block_on;
 use futures::future::select;
 use futures::{Future, FutureExt};
 
-//use futures::sync::oneshot;
-
-use futures;
 use rayon_core::{scope, ThreadPool, ThreadPoolBuilder};
 
 /// Basic test of using futures to data on the stack frame.
@@ -147,8 +144,8 @@ fn future_wait_works_outside_rayon_threads() {
 #[test]
 #[should_panic(expected = "Hello, world!")]
 fn panicy_waker() {
-    use crate::futures::channel::oneshot;
-    use crate::futures::task;
+    use futures::channel::oneshot;
+    use futures::task;
     use std::pin::Pin;
     use std::sync::Arc;
 

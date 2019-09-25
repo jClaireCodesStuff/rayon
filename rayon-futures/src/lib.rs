@@ -4,27 +4,23 @@
 #![deny(missing_debug_implementations)]
 #![doc(html_root_url = "https://docs.rs/rayon-futures/0.3")]
 
-extern crate futures;
-extern crate rayon_core;
+// Still need `RUSTFLAGS='--cfg rayon_unstable'` for this import.
+use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
 
 use futures::future::CatchUnwind;
 use futures::task::{ArcWake, Context, Waker};
 use futures::{Future, Poll};
-//use rayon_core::internal::worker; // May need `RUSTFLAGS='--cfg rayon_unstable'` to compile
 
-//use futures::executor;
-use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
 use std::any::Any;
 use std::fmt;
-use std::pin::Pin;
 use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
-//use std::ptr;
-use std::sync::atomic::Ordering::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::Ordering::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const STATE_PARKED: usize = 0;
 const STATE_UNPARKED: usize = 1;
