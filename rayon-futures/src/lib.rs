@@ -19,7 +19,7 @@ use rayon_core::internal::task::{ScopeHandle, Task as RayonTask, ToScopeHandle};
 use std::any::Any;
 use std::fmt;
 use std::pin::Pin;
-//use std::marker::PhantomData;
+use std::marker::PhantomData;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 //use std::ptr;
@@ -68,7 +68,8 @@ fn change_state(
 pub trait ScopeFutureExt<'scope> {
     fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
-        F: Future + Send + 'scope;
+        F: Future + Send + 'scope,
+        <F as Future>::Output: Send;
 }
 
 impl<'scope, T> ScopeFutureExt<'scope> for T
@@ -78,6 +79,7 @@ where
     fn spawn_future<F>(&self, future: F) -> RayonFuture<F::Output>
     where
         F: Future + Send + 'scope,
+        <F as Future>::Output: Send,
     {
         let scope_future = ScopeFuture::spawn(future, self.to_scope_handle());
         let scope_future = erase_lifetime(scope_future);
@@ -156,6 +158,7 @@ impl<T> fmt::Debug for RayonFuture<T> {
 struct ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     state: AtomicUsize,
@@ -168,6 +171,7 @@ type CUOutput<F> = <CU<F> as Future>::Output;
 struct ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     inner_future: Option<CU<F>>,
@@ -179,7 +183,7 @@ where
     // the counter in the scope; since the scope doesn't terminate until
     // counter reaches zero, and we hold a ref in this counter, we are
     // assured that this pointer remains valid
-    scope: Option<S>,
+    scope: Option<ScopeHandleSend<'scope, S>>,
 
     // waker to wake the outer task when the inner future completes.
     waker: Option<Waker>,
@@ -192,6 +196,7 @@ where
 impl<'scope, F, S> fmt::Debug for ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -199,24 +204,31 @@ where
     }
 }
 
-// TODO: auto-impl Send + Sync for ScopeFuture
 // Assert that the `*const` is safe to transmit between threads:
-unsafe impl<'scope, F, S> Send for ScopeFuture<'scope, F, S>
+struct ScopeHandleSend<'s, S: ScopeHandle<'s>>(S, PhantomData<&'s ()>);
+unsafe impl<'scope, S> Send for ScopeHandleSend<'scope, S> where S: ScopeHandle<'scope> {}
+impl<'scope, S> ScopeHandleSend<'scope, S>
 where
-    F: Future + Send + 'scope,
     S: ScopeHandle<'scope>,
 {
-}
-unsafe impl<'scope, F, S> Sync for ScopeFuture<'scope, F, S>
-where
-    F: Future + Send + 'scope,
-    S: ScopeHandle<'scope>,
-{
+    unsafe fn assert_send(s: S) -> Self {
+        ScopeHandleSend(s, PhantomData)
+    }
+    unsafe fn spawn_task<T: RayonTask + 'scope>(&self, task: Arc<T>) {
+        self.0.spawn_task(task);
+    }
+    fn panicked(self, err: Box<Any + Send>) {
+        self.0.panicked(err);
+    }
+    fn ok(self) {
+        self.0.ok();
+    }
 }
 
 impl<'scope, F, S> ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn spawn(future: F, scope: S) -> Arc<Self> {
@@ -231,7 +243,7 @@ where
             contents: Mutex::new(ScopeFutureContents {
                 inner_future: Some(inner_future),
                 this: None,
-                scope: Some(scope),
+                scope: unsafe { Some(ScopeHandleSend::assert_send(scope)) },
                 waker: None,
                 result: Poll::Pending,
                 canceled: false,
@@ -373,6 +385,7 @@ where
 impl<'scope, F, S> ArcWake for ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
@@ -384,6 +397,7 @@ where
 impl<'scope, F, S> RayonTask for ScopeFuture<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn execute(this: Arc<Self>) {
@@ -456,6 +470,7 @@ where
 impl<'scope, F, S> ScopeFutureContents<'scope, F, S>
 where
     F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn poll_inner(&mut self, cx: &mut Context) -> Poll<CUOutput<F>> {
@@ -579,7 +594,8 @@ unsafe trait ScopeFutureEscapeSafe<T>: Send + Sync {
 
 unsafe impl<'scope, F, S> ScopeFutureEscapeSafe<CUOutput<F>> for ScopeFuture<'scope, F, S>
 where
-    F: Future + Send,
+    F: Future + Send + 'scope,
+    <F as Future>::Output: Send,
     S: ScopeHandle<'scope>,
 {
     fn probe(&self) -> bool {
