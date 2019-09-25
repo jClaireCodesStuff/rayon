@@ -3,8 +3,6 @@
 //! See `README.md` for details.
 #![deny(missing_debug_implementations)]
 #![doc(html_root_url = "https://docs.rs/rayon-futures/0.1")]
-// TODO: bare trait object
-#![allow(bare_trait_objects)]
 
 extern crate futures;
 extern crate rayon_core;
@@ -89,8 +87,8 @@ where
         // Because `ScopeFutureEscapeSafe<T>` contains the lifetimes of `T` and
         // can escape any other lifetime `'l`, that lifetime may be erased.
         fn erase_lifetime<'l, T>(
-            x: Arc<ScopeFutureEscapeSafe<T> + 'l>,
-        ) -> Arc<ScopeFutureEscapeSafe<T>> {
+            x: Arc<dyn ScopeFutureEscapeSafe<T> + 'l>,
+        ) -> Arc<dyn ScopeFutureEscapeSafe<T>> {
             unsafe { mem::transmute(x) }
         }
     }
@@ -104,7 +102,7 @@ where
 /// Any panics that occur while computing the spawned future will be
 /// propagated when this future is polled.
 pub struct RayonFuture<T> {
-    scope_future: Arc<ScopeFutureEscapeSafe<Result<T, Box<Any + Send + 'static>>>>,
+    scope_future: Arc<dyn ScopeFutureEscapeSafe<Result<T, Box<dyn Any + Send + 'static>>>>,
 }
 
 impl<T> Future for RayonFuture<T> {
@@ -217,7 +215,7 @@ where
     unsafe fn spawn_task<T: RayonTask + 'scope>(&self, task: Arc<T>) {
         self.0.spawn_task(task);
     }
-    fn panicked(self, err: Box<Any + Send>) {
+    fn panicked(self, err: Box<dyn Any + Send>) {
         self.0.panicked(err);
     }
     fn ok(self) {
